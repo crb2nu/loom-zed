@@ -1,6 +1,7 @@
-image: rust:1.76
+image: rust:latest
 
 stages:
+  - check
   - test
 
 variables:
@@ -12,9 +13,14 @@ cache:
     - .cargo/
     - target/
 
+check:
+  stage: check
+  script:
+    - rustc --version
+    - cargo fmt -- --check
+    - cargo clippy -- -D warnings
+
 test:
   stage: test
   script:
-    - rustc --version
-    - cargo --version
     - cargo test

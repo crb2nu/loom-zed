@@ -1,25 +1,27 @@
-# Loom for Zed (WIP)
+# Loom for Zed
 
-Zed extension/plugin that integrates Loom (loom-core) with Zed.
+Zed extension that integrates [loom-core](../loom-core/) with Zed as an MCP context server.
 
-Primary goal: expose Loom as a Zed MCP "context server" by running `loom proxy`, so Zed's
-Agent panel can use the full Loom MCP ecosystem (tavily, github/gitlab, k8s, etc.) through
-one entrypoint.
+Exposes the full Loom MCP ecosystem (GitHub, GitLab, K8s, Prometheus, Tavily, etc.) through
+Zed's Agent panel via `loom proxy`.
 
-Status: MVP works (context server + auto-download + slash commands). See `.loom/20-product-spec.md`
-and `.loom/30-implementation-plan.md` from the workspace root for the broader roadmap.
+## Prerequisites
 
-## Planned Features
+- **Zed editor** (latest stable or preview)
+- **Network access** to GitHub (for auto-download of loom-core binaries), OR
+- **Local loom binary** on `$PATH` or configured via `context_servers.loom.command.path`
 
-- Zed context server: `loom` (runs `loom proxy`)
-- Slash commands: `/loom-check`, `/loom-status`, `/loom-sync`, `/loom-restart`
-- Download Loom binaries from GitHub releases into the extension working directory
+## Features
 
-## Notes
+- **Context server**: `loom` runs `loom proxy` as a Zed MCP context server
+- **Slash commands**: `/loom-check`, `/loom-status`, `/loom-sync`, `/loom-restart`
+- **Auto-download**: Downloads loom-core binaries from GitHub releases with retry and exponential backoff
+- **Platform-aware**: Selects the correct binary for macOS/Linux/Windows on arm64/amd64
 
-Zed is GUI-launched; relying on shell-exported environment variables is brittle. Loom should
-be configured using its secret store (`loom secrets set ...`) so `loomd` can resolve tokens
-even when Zed has no environment variables.
+## See Also
+
+- [Loom VS Code Extension](../loom/) — Full-featured MCP management for VS Code
+- [loom-core](../loom-core/) — Backend Go binary powering both extensions
 
 ## Configuration
 
@@ -66,3 +68,48 @@ Notes:
   exactly what you configure.
 - `settings.download.tag` can be used to pin a release tag (example: `"v0.9.0"`).
 - `settings.download.asset` can be used to select an exact asset name from the release (advanced).
+
+## Troubleshooting
+
+### Binary not found
+
+If the auto-download fails, install loom-core manually and set the path:
+
+```json
+{
+  "context_servers": {
+    "loom": {
+      "command": { "path": "/usr/local/bin/loom" }
+    }
+  }
+}
+```
+
+### Network errors during download
+
+The extension retries GitHub API calls with exponential backoff (500ms, 1s, 2s). If downloads
+consistently fail, pin a specific release tag to skip the "latest" API call:
+
+```json
+{
+  "context_servers": {
+    "loom": {
+      "settings": { "download": { "tag": "v0.9.1" } }
+    }
+  }
+}
+```
+
+### Permission denied on binary
+
+On macOS/Linux, the extension calls `zed::make_file_executable()` after download. If that fails,
+manually fix permissions:
+
+```bash
+chmod +x ~/.local/share/zed/extensions/loom-zed/loom-core/*/loom
+```
+
+### Slash commands not working
+
+Ensure `loom` is on your `$PATH` or the auto-download completed successfully. Check Zed's
+extension host logs (View > Toggle Developer Tools) for error messages.
