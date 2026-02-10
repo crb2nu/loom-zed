@@ -179,7 +179,10 @@ impl LoomExtension {
         let (os, arch) = zed::current_platform();
         let key = install_key(settings, os, arch);
         {
-            let installs = self.installs.lock().map_err(|_| "install cache mutex poisoned")?;
+            let installs = self
+                .installs
+                .lock()
+                .map_err(|_| "install cache mutex poisoned")?;
             if let Some(found) = installs.get(&key) {
                 if Path::new(&found.loom_path).exists() {
                     return Ok(found.clone());
@@ -221,9 +224,14 @@ impl LoomExtension {
             _ => ("loom", "loomd"),
         };
 
-        let loom_path = find_file_named(&install_dir, &[loom_name, "loom"])
-            .ok_or_else(|| format!("download succeeded but could not find {} under {:?}", loom_name, install_dir))?;
-        let loomd_path = find_file_named(&install_dir, &[loomd_name, "loomd"]).map(|p| p.to_string_lossy().to_string());
+        let loom_path = find_file_named(&install_dir, &[loom_name, "loom"]).ok_or_else(|| {
+            format!(
+                "download succeeded but could not find {} under {:?}",
+                loom_name, install_dir
+            )
+        })?;
+        let loomd_path = find_file_named(&install_dir, &[loomd_name, "loomd"])
+            .map(|p| p.to_string_lossy().to_string());
 
         // Ensure the binaries are executable (no-op on Windows).
         if os != zed::Os::Windows {
@@ -247,7 +255,10 @@ impl LoomExtension {
             bin_dir,
         };
 
-        let mut installs = self.installs.lock().map_err(|_| "install cache mutex poisoned")?;
+        let mut installs = self
+            .installs
+            .lock()
+            .map_err(|_| "install cache mutex poisoned")?;
         installs.insert(key, install.clone());
         Ok(install)
     }
@@ -262,7 +273,8 @@ fn parse_extension_settings(raw: Option<&zed::serde_json::Value>) -> LoomExtensi
 
 fn env_map_to_vec(env: &HashMap<String, String>) -> Vec<(String, String)> {
     // Keep ordering stable-ish for reproducibility.
-    let mut pairs: Vec<(String, String)> = env.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+    let mut pairs: Vec<(String, String)> =
+        env.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
     pairs.sort_by(|a, b| a.0.cmp(&b.0));
     pairs
 }
@@ -279,7 +291,11 @@ fn current_path_sep() -> &'static str {
     }
 }
 
-fn with_path_prefix(mut env: Vec<(String, String)>, prefix: &str, sep: &str) -> Vec<(String, String)> {
+fn with_path_prefix(
+    mut env: Vec<(String, String)>,
+    prefix: &str,
+    sep: &str,
+) -> Vec<(String, String)> {
     let existing = env
         .iter()
         .find(|(k, _)| k == "PATH")
@@ -336,10 +352,7 @@ fn select_release_asset<'a>(
     arch: zed::Architecture,
     exact_name_override: Option<&str>,
 ) -> Option<&'a zed::GithubReleaseAsset> {
-    if let Some(override_name) = exact_name_override
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    {
+    if let Some(override_name) = exact_name_override.map(str::trim).filter(|s| !s.is_empty()) {
         return assets.iter().find(|a| a.name == override_name);
     }
 
@@ -359,7 +372,8 @@ fn select_release_asset<'a>(
         .filter(|a| {
             let n = a.name.to_ascii_lowercase();
             // Prefer archives.
-            let looks_like_archive = n.ends_with(".tar.gz") || n.ends_with(".tgz") || n.ends_with(".zip");
+            let looks_like_archive =
+                n.ends_with(".tar.gz") || n.ends_with(".tgz") || n.ends_with(".zip");
             looks_like_archive
                 && os_tokens.iter().any(|t| n.contains(t))
                 && arch_tokens.iter().any(|t| n.contains(t))
@@ -389,7 +403,7 @@ fn find_file_named(root: &Path, names: &[&str]) -> Option<PathBuf> {
             let Some(file_name) = path.file_name().and_then(|s| s.to_str()) else {
                 continue;
             };
-            if names.iter().any(|n| file_name == *n) {
+            if names.contains(&file_name) {
                 return Some(path);
             }
         }
@@ -413,7 +427,10 @@ fn run_command_capture(
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-    let status = output.status.map(|s| s.to_string()).unwrap_or_else(|| "unknown".into());
+    let status = output
+        .status
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| "unknown".into());
 
     let mut combined = String::new();
     combined.push_str(&format!("exit_status: {}\n", status));
@@ -517,7 +534,7 @@ mod tests {
     #[test]
     fn parse_extension_settings_default() {
         let s = parse_extension_settings(None);
-        assert_eq!(s.download.enabled(), true);
+        assert!(s.download.enabled());
         assert_eq!(s.download.repo(), DEFAULT_LOOM_CORE_REPO);
     }
 }
