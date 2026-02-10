@@ -9,8 +9,6 @@ Project: Zed extension/plugin to integrate Loom (loom-core) with Zed.
 
 ## Development
 
-This repo is currently a skeleton; once implemented:
-
 - Build/test:
   - `cargo test`
   - `cargo build`
@@ -19,8 +17,16 @@ Zed dev install (expected workflow):
 
 - Use Zed "Install Dev Extension" and point it at this directory.
 
+## Implementation Notes
+
+- `extension.toml` declares:
+  - Context server `loom` (runs `loom proxy`)
+  - Slash commands: `loom-check`, `loom-status`, `loom-sync`, `loom-restart`
+  - Capabilities: `process:exec`, `download_file`
+- `src/lib.rs` downloads `loom` (and `loomd` when present) from GitHub releases into the extension
+  working directory when `context_servers.loom.settings.download.enabled` is true (default).
+
 ## Release Notes
 
 Zed extensions are typically sourced from GitHub (and often submitted to the Zed extensions registry).
 Plan for a GitHub mirror + GitHub release flow for loom-core binary bundles.
-
