@@ -1,0 +1,33 @@
+id = "loom"
+name = "Loom"
+version = "0.1.0"
+schema_version = 1
+authors = ["cblevins"]
+description = "Loom MCP hub integration for Zed (runs `loom proxy` as a context server)."
+repository = "https://github.com/crb2nu/loom-zed"
+
+[lib]
+kind = "Rust"
+version = "0.7.0"
+
+# We need to run `loom` as a subprocess and (optionally) download Loom from GitHub releases.
+capabilities = ["process:exec", "download_file"]
+
+[context_servers.loom]
+name = "Loom"
+
+[slash_commands.loom-check]
+description = "Run `loom check` and return a diagnostic report."
+requires_argument = false
+
+[slash_commands.loom-status]
+description = "Show Loom daemon/server status (best-effort)."
+requires_argument = false
+
+[slash_commands.loom-sync]
+description = "Run Loom config sync (best-effort)."
+requires_argument = false
+
+[slash_commands.loom-restart]
+description = "Restart the Loom daemon (best-effort)."
+requires_argument = false
