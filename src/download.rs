@@ -29,17 +29,16 @@ fn retry_with_backoff<T, F>(mut f: F) -> Result<T, String>
 where
     F: FnMut() -> Result<T, String>,
 {
-    let max_attempts = RETRY_BACKOFF_MS.len() + 1;
-    let mut last_err = String::new();
-    for attempt in 0..max_attempts {
+    // First attempt without backoff, then retry with each backoff delay
+    let mut last_err = match f() {
+        Ok(val) => return Ok(val),
+        Err(e) => e,
+    };
+    for &delay_ms in RETRY_BACKOFF_MS {
+        thread::sleep(Duration::from_millis(delay_ms));
         match f() {
             Ok(val) => return Ok(val),
-            Err(e) => {
-                last_err = e;
-                if attempt < RETRY_BACKOFF_MS.len() {
-                    thread::sleep(Duration::from_millis(RETRY_BACKOFF_MS[attempt]));
-                }
-            }
+            Err(e) => last_err = e,
         }
     }
     Err(last_err)

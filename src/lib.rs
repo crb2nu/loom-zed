@@ -67,9 +67,15 @@ impl zed::Extension for LoomExtension {
 
         let env = env_from_settings;
         let (loom_cmd, env) = if dl.enabled() {
-            log_msg(LogLevel::Info, &format!("downloading loom-core from {}", dl.repo()));
+            log_msg(
+                LogLevel::Info,
+                &format!("downloading loom-core from {}", dl.repo()),
+            );
             let install = download::ensure_loom_install(&self.installs, &dl)?;
-            log_msg(LogLevel::Info, &format!("using loom at {}", install.loom_path));
+            log_msg(
+                LogLevel::Info,
+                &format!("using loom at {}", install.loom_path),
+            );
             (
                 install.loom_path,
                 with_path_prefix(env, &install.bin_dir, current_path_sep()),
@@ -105,8 +111,7 @@ impl zed::Extension for LoomExtension {
             if let Some(path) = wt.which("loom") {
                 (path, base_env)
             } else if download_settings.enabled() {
-                let install =
-                    download::ensure_loom_install(&self.installs, &download_settings)?;
+                let install = download::ensure_loom_install(&self.installs, &download_settings)?;
                 (
                     install.loom_path,
                     with_path_prefix(base_env, &install.bin_dir, current_path_sep()),
@@ -115,8 +120,7 @@ impl zed::Extension for LoomExtension {
                 ("loom".to_string(), base_env)
             }
         } else if download_settings.enabled() {
-            let install =
-                download::ensure_loom_install(&self.installs, &download_settings)?;
+            let install = download::ensure_loom_install(&self.installs, &download_settings)?;
             (
                 install.loom_path,
                 with_path_prefix(base_env, &install.bin_dir, current_path_sep()),
@@ -125,7 +129,10 @@ impl zed::Extension for LoomExtension {
             ("loom".to_string(), base_env)
         };
 
-        log_msg(LogLevel::Info, &format!("slash command: {} {}", command.name, join_args(&args)));
+        log_msg(
+            LogLevel::Info,
+            &format!("slash command: {} {}", command.name, join_args(&args)),
+        );
         let mut cmd_args: Vec<String> = match command.name.as_str() {
             "loom-check" => vec!["check".into()],
             "loom-status" => vec!["status".into()],
