@@ -4,10 +4,12 @@ use std::{
     fs,
     path::{Path, PathBuf},
     sync::Mutex,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use zed_extension_api as zed;
 
 const DEFAULT_LOOM_CORE_REPO: &str = "crb2nu/loom-core";
+const LATEST_RELEASE_TTL: Duration = Duration::from_secs(6 * 60 * 60);
 
 #[derive(Default)]
 struct LoomExtension {
@@ -21,6 +23,7 @@ struct LoomInstall {
     loom_path: String,
     loomd_path: Option<String>,
     bin_dir: String,
+    resolved_at_unix_secs: Option<u64>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -80,12 +83,20 @@ impl zed::Extension for LoomExtension {
             .map(env_map_to_vec)
             .unwrap_or_default();
 
+        let args_from_settings = settings
+            .command
+            .as_ref()
+            .and_then(|c| c.arguments.as_ref())
+            .cloned()
+            .filter(|a| !a.is_empty())
+            .unwrap_or_else(|| vec!["proxy".into()]);
+
         // If the user configured an explicit command path, respect it.
         if let Some(cmd) = settings.command.as_ref() {
             if let Some(path) = cmd.path.as_ref().filter(|p| !p.trim().is_empty()) {
                 return Ok(zed::Command {
                     command: path.trim().to_string(),
-                    args: cmd.arguments.clone().unwrap_or_default(),
+                    args: args_from_settings,
                     env: env_from_settings,
                 });
             }
@@ -107,7 +118,7 @@ impl zed::Extension for LoomExtension {
 
         Ok(zed::Command {
             command: loom_cmd,
-            args: vec!["proxy".into()],
+            args: args_from_settings,
             env,
         })
     }
@@ -178,6 +189,13 @@ impl LoomExtension {
     fn ensure_loom_install(&self, settings: &LoomDownloadSettings) -> Result<LoomInstall, String> {
         let (os, arch) = zed::current_platform();
         let key = install_key(settings, os, arch);
+        let now = unix_now_secs();
+        let is_latest = settings
+            .tag
+            .as_ref()
+            .map(|t| t.trim().is_empty())
+            .unwrap_or(true);
+
         {
             let installs = self
                 .installs
@@ -185,6 +203,15 @@ impl LoomExtension {
                 .map_err(|_| "install cache mutex poisoned")?;
             if let Some(found) = installs.get(&key) {
                 if Path::new(&found.loom_path).exists() {
+                    // Avoid spamming GitHub for latest unless TTL elapsed.
+                    if !is_latest {
+                        return Ok(found.clone());
+                    }
+                    if let Some(resolved_at) = found.resolved_at_unix_secs {
+                        if now.saturating_sub(resolved_at) < LATEST_RELEASE_TTL.as_secs() {
+                            return Ok(found.clone());
+                        }
+                    }
                     return Ok(found.clone());
                 }
             }
@@ -203,11 +230,18 @@ impl LoomExtension {
             )?
         };
 
-        let asset = select_release_asset(&release.assets, os, arch, settings.asset.as_deref())
+        let asset = select_release_asset(
+            &release.assets,
+            &release.version,
+            os,
+            arch,
+            settings.asset.as_deref(),
+        )
             .ok_or_else(|| {
+                let available = summarize_asset_names(&release.assets, 40);
                 format!(
-                    "no matching release asset found for repo={} version={} os={:?} arch={:?}",
-                    repo, release.version, os, arch
+                    "no matching release asset found for repo={} version={} os={:?} arch={:?}. available_assets={}",
+                    repo, release.version, os, arch, available
                 )
             })?;
 
@@ -253,6 +287,7 @@ impl LoomExtension {
             loom_path: loom_path.to_string_lossy().to_string(),
             loomd_path,
             bin_dir,
+            resolved_at_unix_secs: if is_latest { Some(now) } else { None },
         };
 
         let mut installs = self
@@ -348,12 +383,33 @@ fn infer_downloaded_file_type(asset_name: &str) -> zed::DownloadedFileType {
 
 fn select_release_asset<'a>(
     assets: &'a [zed::GithubReleaseAsset],
+    version: &str,
     os: zed::Os,
     arch: zed::Architecture,
     exact_name_override: Option<&str>,
 ) -> Option<&'a zed::GithubReleaseAsset> {
     if let Some(override_name) = exact_name_override.map(str::trim).filter(|s| !s.is_empty()) {
         return assets.iter().find(|a| a.name == override_name);
+    }
+
+    // Preferred: exact match to our canonical loom-core release asset naming.
+    let os_str = match os {
+        zed::Os::Mac => "darwin",
+        zed::Os::Linux => "linux",
+        zed::Os::Windows => "windows",
+    };
+    let arch_str = match arch {
+        zed::Architecture::Aarch64 => "arm64",
+        zed::Architecture::X8664 => "amd64",
+        zed::Architecture::X86 => "x86",
+    };
+    let expected = if os == zed::Os::Windows {
+        format!("loom-core_{}_{}_{}.zip", version, os_str, arch_str)
+    } else {
+        format!("loom-core_{}_{}_{}.tar.gz", version, os_str, arch_str)
+    };
+    if let Some(asset) = assets.iter().find(|a| a.name == expected) {
+        return Some(asset);
     }
 
     let os_tokens: &[&str] = match os {
@@ -411,6 +467,24 @@ fn find_file_named(root: &Path, names: &[&str]) -> Option<PathBuf> {
     }
 
     walk(root, names, 0)
+}
+
+fn unix_now_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_else(|_| Duration::from_secs(0))
+        .as_secs()
+}
+
+fn summarize_asset_names(assets: &[zed::GithubReleaseAsset], max_items: usize) -> String {
+    let mut names: Vec<&str> = assets.iter().map(|a| a.name.as_str()).collect();
+    names.sort();
+    names.truncate(max_items);
+    let mut out = names.join(",");
+    if assets.len() > max_items {
+        out.push_str(",...");
+    }
+    out
 }
 
 fn run_command_capture(
@@ -503,8 +577,14 @@ mod tests {
             },
         ];
 
-        let selected =
-            select_release_asset(&assets, zed::Os::Mac, zed::Architecture::Aarch64, None).unwrap();
+        let selected = select_release_asset(
+            &assets,
+            "0.1.0",
+            zed::Os::Mac,
+            zed::Architecture::Aarch64,
+            None,
+        )
+        .unwrap();
         assert_eq!(selected.download_url, "https://example.invalid/mac");
     }
 
@@ -523,12 +603,37 @@ mod tests {
 
         let selected = select_release_asset(
             &assets,
+            "0.1.0",
             zed::Os::Mac,
             zed::Architecture::Aarch64,
             Some("b.tar.gz"),
         )
         .unwrap();
         assert_eq!(selected.download_url, "https://example.invalid/b");
+    }
+
+    #[test]
+    fn select_asset_exact_canonical_name() {
+        let assets = vec![
+            zed::GithubReleaseAsset {
+                name: "loom-core_v0.9.1_linux_amd64.tar.gz".into(),
+                download_url: "https://example.invalid/linux".into(),
+            },
+            zed::GithubReleaseAsset {
+                name: "loom-core_v0.9.1_linux_arm64.tar.gz".into(),
+                download_url: "https://example.invalid/linux-arm64".into(),
+            },
+        ];
+
+        let selected = select_release_asset(
+            &assets,
+            "v0.9.1",
+            zed::Os::Linux,
+            zed::Architecture::X8664,
+            None,
+        )
+        .unwrap();
+        assert_eq!(selected.download_url, "https://example.invalid/linux");
     }
 
     #[test]

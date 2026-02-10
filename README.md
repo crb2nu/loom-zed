@@ -28,6 +28,12 @@ This extension registers a Zed context server named `loom`. By default it will:
 - Download an appropriate Loom build from the latest GitHub release for `crb2nu/loom-core`
 - Run `loom proxy` as the context server command
 
+The extension expects loom-core GitHub release assets named like:
+
+- `loom-core_v0.9.1_darwin_arm64.tar.gz`
+- `loom-core_v0.9.1_linux_amd64.tar.gz`
+- `loom-core_v0.9.1_windows_amd64.zip`
+
 You can customize behavior in Zed settings under `context_servers.loom`:
 
 ```json
