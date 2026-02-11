@@ -1,11 +1,14 @@
 use zed_extension_api as zed;
 
+use crate::format::CommandResult;
+
+/// Execute a command and capture its output as a structured `CommandResult`.
 pub(crate) fn run_command_capture(
     program: &str,
     args: &[String],
     base_env: &[(String, String)],
     extra_env: &[(String, String)],
-) -> Result<String, String> {
+) -> Result<CommandResult, String> {
     let mut cmd = zed::process::Command::new(program).args(args.iter().cloned());
     for (k, v) in base_env.iter().chain(extra_env.iter()) {
         cmd = cmd.env(k, v);
@@ -14,25 +17,16 @@ pub(crate) fn run_command_capture(
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-    let status = output
+    let exit_code = output
         .status
         .map(|s| s.to_string())
         .unwrap_or_else(|| "unknown".into());
 
-    let mut combined = String::new();
-    combined.push_str(&format!("exit_status: {}\n", status));
-    if !stdout.trim().is_empty() {
-        combined.push_str("\nstdout:\n");
-        combined.push_str(stdout.trim_end());
-        combined.push('\n');
-    }
-    if !stderr.trim().is_empty() {
-        combined.push_str("\nstderr:\n");
-        combined.push_str(stderr.trim_end());
-        combined.push('\n');
-    }
-
-    Ok(truncate_output(&combined, 40_000))
+    Ok(CommandResult {
+        exit_code,
+        stdout: truncate_output(&stdout, 40_000),
+        stderr: truncate_output(&stderr, 40_000),
+    })
 }
 
 pub(crate) fn truncate_output(s: &str, max_chars: usize) -> String {

@@ -1,6 +1,6 @@
 id = "loom"
 name = "Loom"
-version = "0.1.0"
+version = "0.6.0"
 schema_version = 1
 authors = ["cblevins"]
 description = "Loom MCP hub integration for Zed (runs `loom proxy` as a context server)."
@@ -16,18 +16,92 @@ capabilities = ["process:exec", "download_file"]
 [context_servers.loom]
 name = "Loom"
 
+# --- Phase 1 (v0.2.0): Rich Output & Discoverability ---
+
 [slash_commands.loom-check]
 description = "Run `loom check` and return a diagnostic report."
 requires_argument = false
 
 [slash_commands.loom-status]
-description = "Show Loom daemon/server status (best-effort)."
+description = "Show Loom daemon/server status."
 requires_argument = false
 
 [slash_commands.loom-sync]
-description = "Run Loom config sync (best-effort)."
+description = "Sync config: `/loom-sync [status|<platform>]`."
 requires_argument = false
 
 [slash_commands.loom-restart]
-description = "Restart the Loom daemon (best-effort)."
+description = "Restart the Loom daemon."
+requires_argument = false
+
+# --- Phase 2 (v0.3.0): Operations & Observability ---
+
+[slash_commands.loom-start]
+description = "Start the Loom daemon."
+requires_argument = false
+
+[slash_commands.loom-stop]
+description = "Stop the Loom daemon."
+requires_argument = false
+
+[slash_commands.loom-tools]
+description = "List or search MCP tools: `/loom-tools [list|search <q>]`."
+requires_argument = false
+
+[slash_commands.loom-servers]
+description = "List registered MCP servers with status."
+requires_argument = false
+
+[slash_commands.loom-ping]
+description = "Quick daemon + hub health check."
+requires_argument = false
+
+[slash_commands.loom-secrets]
+description = "Manage secrets: `/loom-secrets [list|validate]`."
+requires_argument = false
+
+# --- Phase 3 (v0.4.0): Agent Lifecycle ---
+
+[slash_commands.loom-session]
+description = "Agent sessions: `/loom-session [start|end|status|list]`."
+requires_argument = false
+
+[slash_commands.loom-heartbeat]
+description = "Send agent heartbeat signal."
+requires_argument = false
+
+[slash_commands.loom-task]
+description = "Agent tasks: `/loom-task [list|add|update]`."
+requires_argument = false
+
+[slash_commands.loom-recall]
+description = "Recall context from agent memory."
+requires_argument = true
+
+# --- Phase 4 (v0.5.0): Discovery & Intelligence ---
+
+[slash_commands.loom-skills]
+description = "Browse skills: `/loom-skills [list|search|categories]`."
+requires_argument = false
+
+[slash_commands.loom-search]
+description = "Deep search across sources."
+requires_argument = true
+
+[slash_commands.loom-profile]
+description = "Profile management: `/loom-profile [current|list|switch]`."
+requires_argument = false
+
+[slash_commands.loom-call]
+description = "Invoke any MCP tool: `/loom-call <tool> [json_args]`."
+requires_argument = true
+
+[slash_commands.loom-dashboard]
+description = "Composite overview: status, servers, tools, sync, session."
+requires_argument = false
+
+# --- Phase 5 (v0.6.0): Polish & Reliability ---
+
+[slash_commands.loom-help]
+description = "Show help for all commands or a specific command."
 requires_argument = false
