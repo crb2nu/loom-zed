@@ -51,7 +51,18 @@ PROMPT_RECIPES = [
     {
         "name": f"{PROMPT_PREFIX}onboard_repo",
         "description": "Onboard to this repo quickly (structure, workflows, risks).",
-        "arguments": [],
+        "arguments": [
+            {
+                "name": "focus",
+                "description": "Optional focus area (e.g. 'auth', 'deploy', 'agent ux').",
+                "required": False,
+            },
+            {
+                "name": "goal",
+                "description": "What you want to accomplish after onboarding (optional).",
+                "required": False,
+            },
+        ],
         "template": (
             "You are my coding copilot. Onboard to this repository.\n\n"
             "1) Summarize what this repo does and where the important entrypoints are.\n"
@@ -63,7 +74,18 @@ PROMPT_RECIPES = [
     {
         "name": f"{PROMPT_PREFIX}triage_ci",
         "description": "Triage a failing CI job and propose a minimal fix.",
-        "arguments": [],
+        "arguments": [
+            {
+                "name": "link",
+                "description": "Link to the failing job/logs (optional).",
+                "required": False,
+            },
+            {
+                "name": "symptoms",
+                "description": "Paste the error snippet or summarize what you see (optional).",
+                "required": False,
+            },
+        ],
         "template": (
             "Help me triage CI failures.\n\n"
             "1) Determine what failed and why.\n"
@@ -75,7 +97,18 @@ PROMPT_RECIPES = [
     {
         "name": f"{PROMPT_PREFIX}k8s_rollout_check",
         "description": "Kubernetes rollout checklist (safe steps + verification).",
-        "arguments": [],
+        "arguments": [
+            {
+                "name": "cluster",
+                "description": "Target cluster/context name (optional).",
+                "required": False,
+            },
+            {
+                "name": "namespace",
+                "description": "Target namespace (optional).",
+                "required": False,
+            },
+        ],
         "template": (
             "Give me a safe Kubernetes rollout checklist for this change.\n\n"
             "Include: what to check before, how to deploy, how to verify, and rollback steps.\n"
@@ -85,7 +118,18 @@ PROMPT_RECIPES = [
     {
         "name": f"{PROMPT_PREFIX}security_quickscan",
         "description": "Quick security scan (secrets, deps, risky patterns) and mitigations.",
-        "arguments": [],
+        "arguments": [
+            {
+                "name": "scope",
+                "description": "Scope to scan (e.g. 'changed files', 'src/', 'deps') (optional).",
+                "required": False,
+            },
+            {
+                "name": "concerns",
+                "description": "Any specific concerns (e.g. 'tokens', 'subprocess', 'sql') (optional).",
+                "required": False,
+            },
+        ],
         "template": (
             "Do a quick security scan of the change/repo.\n\n"
             "Check for secrets, unsafe subprocess usage, injection risks, and dependency issues.\n"
@@ -138,16 +182,32 @@ def _prompt_list() -> Dict[str, Any]:
 
 
 def _prompt_get(name: str, arguments: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    _ = arguments or {}
+    args = arguments or {}
     for p in PROMPT_RECIPES:
         if p["name"] == name:
+            extra_lines = []
+            for k, v in args.items():
+                if v is None:
+                    continue
+                if isinstance(v, str) and not v.strip():
+                    continue
+                if isinstance(v, (dict, list)):
+                    rendered = json.dumps(v)
+                else:
+                    rendered = str(v)
+                extra_lines.append(f"- {k}: {rendered}")
+
+            text = p["template"]
+            if extra_lines:
+                text = text + "\n\nAdditional context:\n" + "\n".join(extra_lines) + "\n"
+
             # MCP prompt result returns "messages" the client can add to the conversation.
             return {
                 "description": p["description"],
                 "messages": [
                     {
                         "role": "user",
-                        "content": {"type": "text", "text": p["template"]},
+                        "content": {"type": "text", "text": text},
                     }
                 ],
             }
