@@ -30,6 +30,7 @@ pub(crate) fn dispatch_help(args: &[String]) -> FormattedOutput {
 | `/loom-profile [current\|list\|switch]` | Profile management |
 | `/loom-call <tool> [json]` | Invoke any MCP tool directly |
 | `/loom-dashboard` | Composite overview dashboard |
+| `/loom-info` | Show resolved Loom binary and version |
 | `/loom-help [command]` | Show this help or command details |
 
 Use `/loom-help <command>` for detailed usage.
@@ -60,6 +61,7 @@ fn command_help(cmd: &str) -> FormattedOutput {
         "profile" => "## `/loom-profile`\n\nProfile management.\n\n**Usage**:\n- `/loom-profile` — show current profile\n- `/loom-profile current` — show current profile\n- `/loom-profile list` — list all profiles\n- `/loom-profile switch <name>` — switch profile\n",
         "call" => "## `/loom-call`\n\nInvoke any MCP tool directly.\n\n**Usage**: `/loom-call <tool_name> [json_args]`\n\nExample: `/loom-call agent_memory_recall {\"query\": \"auth\"}`\n",
         "dashboard" => "## `/loom-dashboard`\n\nComposite overview combining status, servers, tools, sync, and session info.\n\n**Usage**: `/loom-dashboard`\n\nNo arguments required.\n",
+        "info" => "## `/loom-info`\n\nShow the resolved Loom binary path and attempt to print its version.\n\n**Usage**: `/loom-info`\n\nNo arguments required.\n",
         "help" => "## `/loom-help`\n\nShow help for all commands or a specific command.\n\n**Usage**:\n- `/loom-help` — list all commands\n- `/loom-help <command>` — show details for one command\n",
         _ => &format!("Unknown command `{}`. Use `/loom-help` to see all commands.\n", cmd),
     };

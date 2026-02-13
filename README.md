@@ -14,7 +14,7 @@ Zed's Agent panel via `loom proxy`.
 ## Features
 
 - **Context server**: `loom` runs `loom proxy` as a Zed MCP context server
-- **Slash commands**: `/loom-check`, `/loom-status`, `/loom-sync`, `/loom-restart`
+- **Slash commands**: `/loom-check`, `/loom-status`, `/loom-sync`, `/loom-restart`, `/loom-info`
 - **Auto-download**: Downloads loom-core binaries from GitHub releases with retry and exponential backoff
 - **Platform-aware**: Selects the correct binary for macOS/Linux/Windows on arm64/amd64
 
@@ -42,13 +42,9 @@ You can customize behavior in Zed settings under `context_servers.loom`:
 {
   "context_servers": {
     "loom": {
-      "command": {
-        "path": null,
-        "arguments": null,
-        "env": {
-          "LOOM_LOG_LEVEL": "info"
-        }
-      },
+      "command": "loom",
+      "args": ["proxy"],
+      "env": { "LOOM_LOG_LEVEL": "info" },
       "settings": {
         "download": {
           "enabled": true,
@@ -64,8 +60,8 @@ You can customize behavior in Zed settings under `context_servers.loom`:
 
 Notes:
 
-- If you set `context_servers.loom.command.path`, the extension will not download Loom and will run
-  exactly what you configure.
+- If you set `context_servers.loom.command` to an explicit absolute path (or a command resolvable in Zed's environment),
+  the extension will not download Loom and will run exactly what you configure.
 - `settings.download.tag` can be used to pin a release tag (example: `"v0.9.0"`).
 - `settings.download.asset` can be used to select an exact asset name from the release (advanced).
 

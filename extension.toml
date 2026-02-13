@@ -100,6 +100,10 @@ requires_argument = true
 description = "Composite overview: status, servers, tools, sync, session."
 requires_argument = false
 
+[slash_commands.loom-info]
+description = "Show resolved Loom binary and version info."
+requires_argument = false
+
 # --- Phase 5 (v0.6.0): Polish & Reliability ---
 
 [slash_commands.loom-help]

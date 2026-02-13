@@ -3,6 +3,16 @@ use zed_extension_api as zed;
 
 pub(crate) const DEFAULT_LOOM_CORE_REPO: &str = "crb2nu/loom-core";
 
+#[derive(Clone, Debug, Default)]
+pub(crate) struct LoomRuntimeSettings {
+    /// Optional explicit loom binary path (from Zed context server settings).
+    pub(crate) command_path: Option<String>,
+    /// Environment variables to apply (from Zed context server settings).
+    pub(crate) command_env: Vec<(String, String)>,
+    /// Extension-specific settings (download, agent, etc).
+    pub(crate) extension: LoomExtensionSettings,
+}
+
 #[derive(Clone, Debug, Default, Deserialize)]
 pub(crate) struct LoomExtensionSettings {
     #[serde(default)]

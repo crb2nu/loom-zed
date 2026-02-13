@@ -71,8 +71,9 @@ pub(crate) fn ensure_loom_install(
                     if now.saturating_sub(resolved_at) < LATEST_RELEASE_TTL.as_secs() {
                         return Ok(found.clone());
                     }
+                    // TTL elapsed: fall through and refresh "latest".
                 }
-                return Ok(found.clone());
+                // If we don't have a resolved_at timestamp for "latest", treat as stale and refresh.
             }
         }
     }

@@ -125,6 +125,7 @@ fn complete_help(args: &[String]) -> Vec<zed::SlashCommandArgumentCompletion> {
         ("profile", "Profile management"),
         ("call", "Invoke MCP tool"),
         ("dashboard", "Overview dashboard"),
+        ("info", "Binary/version info"),
     ];
     filter_completions(commands, query_from_args(args))
 }
