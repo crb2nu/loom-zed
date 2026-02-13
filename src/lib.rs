@@ -84,17 +84,6 @@ impl zed::Extension for LoomExtension {
             });
         }
 
-        // If the user configured an explicit command path, respect it.
-        if let Some(cmd) = settings.command.as_ref() {
-            if let Some(path) = cmd.path.as_ref().filter(|p| !p.trim().is_empty()) {
-                return Ok(zed::Command {
-                    command: path.trim().to_string(),
-                    args: args_from_settings,
-                    env: env_from_settings,
-                });
-            }
-        }
-
         log_msg(
             LogLevel::Info,
             &format!(
@@ -107,12 +96,22 @@ impl zed::Extension for LoomExtension {
 
         let env = env_from_settings;
 
-        // Always try to resolve a local binary first — this avoids blocking
-        // on slow/failing GitHub API calls when loom is already installed.
+        // Determine the loom binary path to run (explicit path, local, or download).
         let local_path = resolve_loom_path();
         let have_local = local_path != "loom";
 
-        let (loom_cmd, env) = if dl.enabled() && !have_local {
+        let explicit_path = settings
+            .command
+            .as_ref()
+            .and_then(|c| c.path.as_ref())
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+
+        // Always try to resolve a local binary first — this avoids blocking
+        // on slow/failing GitHub API calls when loom is already installed.
+        let (loom_cmd, env) = if let Some(p) = explicit_path {
+            (p, env)
+        } else if dl.enabled() && !have_local {
             log_msg(
                 LogLevel::Info,
                 &format!("downloading loom-core from {}", dl.repo()),
@@ -130,6 +129,65 @@ impl zed::Extension for LoomExtension {
             log_msg(LogLevel::Info, &format!("using loom at: {local_path}"));
             (local_path, env)
         };
+
+        // Optional MCP wrapper: adds prompt recipes + tool list hot reload.
+        // If the wrapper isn't available, run `loom proxy` directly.
+        if ext_settings.mcp.wrapper.enabled() {
+            let wrapper_path = std::env::current_dir()
+                .ok()
+                .map(|d| d.join("scripts").join("loom_mcp_wrapper.py"))
+                .filter(|p| p.exists())
+                .and_then(|p| p.to_str().map(|s| s.to_string()))
+                .or_else(|| {
+                    let rel = std::path::Path::new("scripts/loom_mcp_wrapper.py");
+                    rel.exists().then(|| rel.to_string_lossy().to_string())
+                });
+
+            let python = ext_settings
+                .mcp
+                .wrapper
+                .python()
+                .map(|s| s.to_string())
+                .or_else(|| {
+                    for cand in ["python3", "python"] {
+                        if let Ok(output) =
+                            zed::process::Command::new(cand).arg("--version").output()
+                        {
+                            if output.status == Some(0) {
+                                return Some(cand.to_string());
+                            }
+                        }
+                    }
+                    None
+                });
+
+            if let (Some(wrapper_path), Some(python)) = (wrapper_path, python) {
+                log_msg(LogLevel::Info, "starting loom via MCP wrapper");
+
+                let mut args = vec![
+                    wrapper_path,
+                    "--loom".to_string(),
+                    loom_cmd.clone(),
+                    "--tools-poll-interval-secs".to_string(),
+                    ext_settings
+                        .mcp
+                        .wrapper
+                        .tools_poll_interval_secs()
+                        .to_string(),
+                ];
+                if !ext_settings.mcp.prompts.enabled() {
+                    args.push("--disable-prompt-recipes".to_string());
+                }
+                args.push("--".to_string());
+                args.extend(args_from_settings.clone());
+
+                return Ok(zed::Command {
+                    command: python,
+                    args,
+                    env,
+                });
+            }
+        }
 
         Ok(zed::Command {
             command: loom_cmd,

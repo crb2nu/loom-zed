@@ -20,6 +20,8 @@ pub(crate) struct LoomExtensionSettings {
     #[serde(default)]
     #[allow(dead_code)] // consumed by dispatch_session/heartbeat/task in future
     pub(crate) agent: AgentSettings,
+    #[serde(default)]
+    pub(crate) mcp: McpSettings,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -42,6 +44,30 @@ pub(crate) struct AgentSettings {
     pub(crate) agent_id: Option<String>,
     /// Default namespace for sessions (e.g. "project/branch").
     pub(crate) default_namespace: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+pub(crate) struct McpSettings {
+    #[serde(default)]
+    pub(crate) wrapper: McpWrapperSettings,
+    #[serde(default)]
+    pub(crate) prompts: McpPromptsSettings,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+pub(crate) struct McpWrapperSettings {
+    /// If true, run the MCP wrapper process (python) instead of running `loom proxy` directly.
+    pub(crate) enabled: Option<bool>,
+    /// Optional python executable path/name (e.g. "/usr/bin/python3").
+    pub(crate) python: Option<String>,
+    /// Poll interval for `tools/list` change detection.
+    pub(crate) tools_poll_interval_secs: Option<u64>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+pub(crate) struct McpPromptsSettings {
+    /// If true, expose Loom Zed prompt recipes via MCP Prompts.
+    pub(crate) enabled: Option<bool>,
 }
 
 impl Default for AgentSettings {
@@ -70,6 +96,29 @@ impl LoomDownloadSettings {
             .as_deref()
             .unwrap_or(DEFAULT_LOOM_CORE_REPO)
             .trim()
+    }
+}
+
+impl McpWrapperSettings {
+    pub(crate) fn enabled(&self) -> bool {
+        self.enabled.unwrap_or(true)
+    }
+
+    pub(crate) fn python(&self) -> Option<&str> {
+        self.python
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+    }
+
+    pub(crate) fn tools_poll_interval_secs(&self) -> u64 {
+        self.tools_poll_interval_secs.unwrap_or(30)
+    }
+}
+
+impl McpPromptsSettings {
+    pub(crate) fn enabled(&self) -> bool {
+        self.enabled.unwrap_or(true)
     }
 }
 
@@ -109,6 +158,15 @@ brew install crb2nu/tap/loom-core
 ## Auto-Download
 
 If `loom` is not on your PATH, this extension downloads it automatically from GitHub Releases. To disable, set `"download": { "enabled": false }` in the extension settings.
+
+## Zed UX Enhancements (MCP Wrapper)
+
+By default, the extension starts a small `python3` wrapper around `loom proxy` that adds:
+
+- Prompt recipes (MCP Prompts) in the Agent prompt picker
+- Tool hot reload (emits `tools/list_changed` when Loom's tool set changes)
+
+To disable the wrapper, set `"mcp": { "wrapper": { "enabled": false } }` in the extension settings.
 "#;
 
 pub(crate) const SETTINGS_SCHEMA: &str = r#"{
@@ -156,6 +214,46 @@ pub(crate) const SETTINGS_SCHEMA: &str = r#"{
           "description": "Default namespace for agent sessions."
         }
       }
+    },
+    "mcp": {
+      "type": "object",
+      "description": "MCP integration settings for Zed.",
+      "properties": {
+        "wrapper": {
+          "type": "object",
+          "description": "Wrapper settings for adding Zed UX enhancements on top of `loom proxy`.",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true,
+              "description": "Run the MCP wrapper (requires python3)."
+            },
+            "python": {
+              "type": ["string", "null"],
+              "default": null,
+              "description": "Optional explicit python executable to use (e.g. '/usr/bin/python3')."
+            },
+            "tools_poll_interval_secs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 600,
+              "default": 30,
+              "description": "Poll tools/list every N seconds and emit tools/list_changed when it changes. 0 disables polling."
+            }
+          }
+        },
+        "prompts": {
+          "type": "object",
+          "description": "Prompt recipes exposed via MCP Prompts.",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true,
+              "description": "Expose prompt recipes (onboarding, CI triage, rollout checklists) in the Agent prompt picker."
+            }
+          }
+        }
+      }
     }
   }
 }"#;
@@ -170,6 +268,16 @@ pub(crate) const DEFAULT_SETTINGS: &str = r#"{
   "agent": {
     "agent_id": "zed-loom",
     "default_namespace": null
+  },
+  "mcp": {
+    "wrapper": {
+      "enabled": true,
+      "python": null,
+      "tools_poll_interval_secs": 30
+    },
+    "prompts": {
+      "enabled": true
+    }
   }
 }"#;
 

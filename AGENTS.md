@@ -107,6 +107,14 @@ Configured in Zed settings under `context_servers.loom`:
           "repo": "crb2nu/loom-core",
           "tag": null,
           "asset": null
+        },
+        "mcp": {
+          "wrapper": {
+            "enabled": true,
+            "python": null,
+            "tools_poll_interval_secs": 30
+          },
+          "prompts": { "enabled": true }
         }
       }
     }

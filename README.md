@@ -15,6 +15,8 @@ Zed's Agent panel via `loom proxy`.
 
 - **Context server**: `loom` runs `loom proxy` as a Zed MCP context server
 - **Slash commands**: `/loom-check`, `/loom-status`, `/loom-sync`, `/loom-restart`, `/loom-info`
+- **Prompt recipes**: Curated MCP prompts in Zed's Agent prompt picker (onboarding, CI triage, rollout)
+- **Tool hot reload**: Automatically refreshes the tool list when Loom's tool set changes
 - **Auto-download**: Downloads loom-core binaries from GitHub releases with retry and exponential backoff
 - **Platform-aware**: Selects the correct binary for macOS/Linux/Windows on arm64/amd64
 
@@ -51,6 +53,16 @@ You can customize behavior in Zed settings under `context_servers.loom`:
           "repo": "crb2nu/loom-core",
           "tag": null,
           "asset": null
+        },
+        "mcp": {
+          "wrapper": {
+            "enabled": true,
+            "python": null,
+            "tools_poll_interval_secs": 30
+          },
+          "prompts": {
+            "enabled": true
+          }
         }
       }
     }
@@ -62,6 +74,7 @@ Notes:
 
 - If you set `context_servers.loom.command` to an explicit absolute path (or a command resolvable in Zed's environment),
   the extension will not download Loom and will run exactly what you configure.
+- The MCP wrapper that provides prompt recipes + tool hot reload requires `python3` to be available on your machine.
 - `settings.download.tag` can be used to pin a release tag (example: `"v0.9.0"`).
 - `settings.download.asset` can be used to select an exact asset name from the release (advanced).
 
