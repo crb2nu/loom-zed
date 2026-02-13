@@ -94,6 +94,35 @@ PROMPT_RECIPES = [
     },
 ]
 
+RESOURCE_PREFIX = "loom-zed://"
+
+RESOURCES = [
+    {
+        "uri": f"{RESOURCE_PREFIX}status",
+        "name": "Loom Status",
+        "description": "Current Loom daemon status (from `loom status`).",
+        "mimeType": "text/plain",
+    },
+    {
+        "uri": f"{RESOURCE_PREFIX}servers",
+        "name": "Loom Servers",
+        "description": "Registered servers (from `loom servers list`).",
+        "mimeType": "text/plain",
+    },
+    {
+        "uri": f"{RESOURCE_PREFIX}tools",
+        "name": "Loom Tools",
+        "description": "Current aggregated MCP tool list (from tools/list).",
+        "mimeType": "text/plain",
+    },
+    {
+        "uri": f"{RESOURCE_PREFIX}settings",
+        "name": "Loom Zed Settings",
+        "description": "Effective wrapper settings (best-effort).",
+        "mimeType": "application/json",
+    },
+]
+
 
 def _prompt_list() -> Dict[str, Any]:
     return {
@@ -123,6 +152,29 @@ def _prompt_get(name: str, arguments: Optional[Dict[str, Any]] = None) -> Dict[s
                 ],
             }
     raise KeyError(name)
+
+
+def _resources_list() -> Dict[str, Any]:
+    return {"resources": RESOURCES}
+
+
+def _truncate_lines(s: str, max_lines: int = 400) -> str:
+    lines = s.splitlines()
+    if len(lines) <= max_lines:
+        return s
+    kept = "\n".join(lines[:max_lines])
+    return kept + f"\n\n[output truncated: {len(lines) - max_lines} lines]\n"
+
+
+def _run_loom(ns: argparse.Namespace, args: list[str], timeout_secs: int) -> str:
+    out = subprocess.run(
+        [ns.loom, *args],
+        text=True,
+        capture_output=True,
+        timeout=timeout_secs,
+    )
+    text = (out.stdout or out.stderr or "").strip()
+    return text or "no output"
 
 
 class Child:
@@ -166,10 +218,17 @@ def main() -> int:
         default=False,
         help="Disable Loom Zed prompt recipes.",
     )
+    ap.add_argument(
+        "--disable-zed-resources",
+        action="store_true",
+        default=False,
+        help="Disable Loom Zed resources (resources/list + resources/read).",
+    )
     ap.add_argument("child_args", nargs=argparse.REMAINDER)
     ns = ap.parse_args()
 
     enable_prompts = not ns.disable_prompt_recipes
+    enable_resources = not ns.disable_zed_resources
 
     child_cmd = [ns.loom]
     if ns.child_args and ns.child_args[0] == "--":
@@ -182,11 +241,13 @@ def main() -> int:
     # Map of request ids that should be intercepted/rewritten on the way back.
     intercept_prompts_list_ids: set[Any] = set()
     intercept_tools_list_ids: set[Any] = set()
+    intercept_resources_list_ids: set[Any] = set()
     initialize_id: Any = None
 
     # Tool set change detection state.
     tools_hash_lock = threading.Lock()
     last_tools_hash: Optional[str] = None
+    last_tools_names: list[str] = []
     poll_inflight = False
 
     outbound_q: "queue.Queue[Dict[str, Any]]" = queue.Queue()
@@ -195,7 +256,7 @@ def main() -> int:
         outbound_q.put(obj)
 
     def reader_thread() -> None:
-        nonlocal last_tools_hash, poll_inflight
+        nonlocal last_tools_hash, last_tools_names, poll_inflight
         assert child.proc.stdout
         for line in child.proc.stdout:
             line = line.strip()
@@ -234,11 +295,38 @@ def main() -> int:
                 forward_to_client(msg)
                 continue
 
+            if msg_id in intercept_resources_list_ids:
+                intercept_resources_list_ids.discard(msg_id)
+                if "error" in msg:
+                    msg.pop("error", None)
+                    msg["result"] = _resources_list()
+                    forward_to_client(msg)
+                    continue
+
+                # Merge child resources with ours (ours first).
+                result = msg.get("result") if isinstance(msg.get("result"), dict) else {}
+                merged = _resources_list()
+                child_resources = []
+                if isinstance(result, dict):
+                    child_resources = result.get("resources") or []
+                if isinstance(child_resources, list):
+                    merged["resources"].extend(child_resources)
+                msg["result"] = merged
+                forward_to_client(msg)
+                continue
+
             if msg_id in intercept_tools_list_ids:
                 intercept_tools_list_ids.discard(msg_id)
                 with tools_hash_lock:
                     poll_inflight = False
                     if isinstance(msg.get("result"), dict):
+                        tools = msg["result"].get("tools") or []
+                        names: list[str] = []
+                        for t in tools:
+                            if isinstance(t, dict) and isinstance(t.get("name"), str):
+                                names.append(t["name"])
+                        names.sort()
+                        last_tools_names = names
                         new_hash = _hash_tools_list(msg["result"])
                         if last_tools_hash is None:
                             last_tools_hash = new_hash
@@ -258,6 +346,13 @@ def main() -> int:
                 # Heuristic: tools/list responses contain a "tools" array.
                 if "tools" in msg["result"]:
                     with tools_hash_lock:
+                        tools = msg["result"].get("tools") or []
+                        names = []
+                        for t in tools:
+                            if isinstance(t, dict) and isinstance(t.get("name"), str):
+                                names.append(t["name"])
+                        names.sort()
+                        last_tools_names = names
                         last_tools_hash = _hash_tools_list(msg["result"])
 
             forward_to_client(msg)
@@ -316,6 +411,11 @@ def main() -> int:
             if method == "initialize":
                 initialize_id = msg.get("id")
 
+            if enable_resources and method == "resources/list":
+                intercept_resources_list_ids.add(msg.get("id"))
+                child.send(msg)
+                continue
+
             if enable_prompts and method == "prompts/get":
                 params = msg.get("params") if isinstance(msg.get("params"), dict) else {}
                 name = params.get("name")
@@ -330,6 +430,115 @@ def main() -> int:
                                 "jsonrpc": "2.0",
                                 "id": msg.get("id"),
                                 "error": {"code": -32602, "message": f"unknown prompt: {name}"},
+                            }
+                        )
+                    continue
+
+            if enable_resources and method == "resources/read":
+                params = msg.get("params") if isinstance(msg.get("params"), dict) else {}
+                uri = params.get("uri")
+                if isinstance(uri, str) and uri.startswith(RESOURCE_PREFIX):
+                    rid = msg.get("id")
+                    try:
+                        if uri == f"{RESOURCE_PREFIX}status":
+                            text = _truncate_lines(_run_loom(ns, ["status"], timeout_secs=5))
+                            forward_to_client(
+                                {
+                                    "jsonrpc": "2.0",
+                                    "id": rid,
+                                    "result": {
+                                        "contents": [
+                                            {
+                                                "uri": uri,
+                                                "mimeType": "text/plain",
+                                                "text": text,
+                                            }
+                                        ]
+                                    },
+                                }
+                            )
+                        elif uri == f"{RESOURCE_PREFIX}servers":
+                            text = _truncate_lines(
+                                _run_loom(ns, ["servers", "list"], timeout_secs=10)
+                            )
+                            forward_to_client(
+                                {
+                                    "jsonrpc": "2.0",
+                                    "id": rid,
+                                    "result": {
+                                        "contents": [
+                                            {
+                                                "uri": uri,
+                                                "mimeType": "text/plain",
+                                                "text": text,
+                                            }
+                                        ]
+                                    },
+                                }
+                            )
+                        elif uri == f"{RESOURCE_PREFIX}tools":
+                            with tools_hash_lock:
+                                names = list(last_tools_names)
+                            if not names:
+                                text = "Tools list not available yet. Try again after the context server has finished starting."
+                            else:
+                                # Keep this short enough for Zed to display easily.
+                                shown = names[:500]
+                                text = "\n".join(shown)
+                                if len(names) > len(shown):
+                                    text += f"\n\n[truncated: {len(names) - len(shown)} more tools]\n"
+                            forward_to_client(
+                                {
+                                    "jsonrpc": "2.0",
+                                    "id": rid,
+                                    "result": {
+                                        "contents": [
+                                            {
+                                                "uri": uri,
+                                                "mimeType": "text/plain",
+                                                "text": text,
+                                            }
+                                        ]
+                                    },
+                                }
+                            )
+                        elif uri == f"{RESOURCE_PREFIX}settings":
+                            payload = {
+                                "wrapper": {
+                                    "tools_poll_interval_secs": int(ns.tools_poll_interval_secs),
+                                    "prompts_enabled": bool(enable_prompts),
+                                    "resources_enabled": bool(enable_resources),
+                                }
+                            }
+                            forward_to_client(
+                                {
+                                    "jsonrpc": "2.0",
+                                    "id": rid,
+                                    "result": {
+                                        "contents": [
+                                            {
+                                                "uri": uri,
+                                                "mimeType": "application/json",
+                                                "text": json.dumps(payload, indent=2),
+                                            }
+                                        ]
+                                    },
+                                }
+                            )
+                        else:
+                            forward_to_client(
+                                {
+                                    "jsonrpc": "2.0",
+                                    "id": rid,
+                                    "error": {"code": -32602, "message": f"unknown resource: {uri}"},
+                                }
+                            )
+                    except subprocess.TimeoutExpired:
+                        forward_to_client(
+                            {
+                                "jsonrpc": "2.0",
+                                "id": rid,
+                                "error": {"code": -32000, "message": f"timeout reading resource: {uri}"},
                             }
                         )
                     continue

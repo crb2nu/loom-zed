@@ -62,6 +62,9 @@ You can customize behavior in Zed settings under `context_servers.loom`:
           },
           "prompts": {
             "enabled": true
+          },
+          "resources": {
+            "enabled": true
           }
         }
       }

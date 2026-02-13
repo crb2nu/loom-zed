@@ -178,6 +178,9 @@ impl zed::Extension for LoomExtension {
                 if !ext_settings.mcp.prompts.enabled() {
                     args.push("--disable-prompt-recipes".to_string());
                 }
+                if !ext_settings.mcp.resources.enabled() {
+                    args.push("--disable-zed-resources".to_string());
+                }
                 args.push("--".to_string());
                 args.extend(args_from_settings.clone());
 

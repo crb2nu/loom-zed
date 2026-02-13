@@ -52,6 +52,8 @@ pub(crate) struct McpSettings {
     pub(crate) wrapper: McpWrapperSettings,
     #[serde(default)]
     pub(crate) prompts: McpPromptsSettings,
+    #[serde(default)]
+    pub(crate) resources: McpResourcesSettings,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -67,6 +69,12 @@ pub(crate) struct McpWrapperSettings {
 #[derive(Clone, Debug, Default, Deserialize)]
 pub(crate) struct McpPromptsSettings {
     /// If true, expose Loom Zed prompt recipes via MCP Prompts.
+    pub(crate) enabled: Option<bool>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+pub(crate) struct McpResourcesSettings {
+    /// If true, expose Loom Zed resources via MCP Resources.
     pub(crate) enabled: Option<bool>,
 }
 
@@ -117,6 +125,12 @@ impl McpWrapperSettings {
 }
 
 impl McpPromptsSettings {
+    pub(crate) fn enabled(&self) -> bool {
+        self.enabled.unwrap_or(true)
+    }
+}
+
+impl McpResourcesSettings {
     pub(crate) fn enabled(&self) -> bool {
         self.enabled.unwrap_or(true)
     }
@@ -252,6 +266,17 @@ pub(crate) const SETTINGS_SCHEMA: &str = r#"{
               "description": "Expose prompt recipes (onboarding, CI triage, rollout checklists) in the Agent prompt picker."
             }
           }
+        },
+        "resources": {
+          "type": "object",
+          "description": "Resources exposed via MCP Resources (for 'Add Context').",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true,
+              "description": "Expose Loom status/servers/tools/settings as MCP resources."
+            }
+          }
         }
       }
     }
@@ -276,6 +301,9 @@ pub(crate) const DEFAULT_SETTINGS: &str = r#"{
       "tools_poll_interval_secs": 30
     },
     "prompts": {
+      "enabled": true
+    },
+    "resources": {
       "enabled": true
     }
   }

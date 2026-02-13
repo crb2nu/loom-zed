@@ -114,7 +114,8 @@ Configured in Zed settings under `context_servers.loom`:
             "python": null,
             "tools_poll_interval_secs": 30
           },
-          "prompts": { "enabled": true }
+          "prompts": { "enabled": true },
+          "resources": { "enabled": true }
         }
       }
     }
