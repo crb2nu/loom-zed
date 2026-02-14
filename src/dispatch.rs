@@ -19,12 +19,19 @@ use zed_extension_api as zed;
 // ---------------------------------------------------------------------------
 
 fn resolve_loom_path_from_host() -> String {
-    // Try `which loom` through the host.
-    if let Ok(output) = zed::process::Command::new("which").arg("loom").output() {
-        if output.status == Some(0) {
-            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !path.is_empty() {
-                return path;
+    // Try to locate `loom` through the host (POSIX: `which`, Windows: `where`).
+    for locator in ["which", "where"] {
+        if let Ok(output) = zed::process::Command::new(locator).arg("loom").output() {
+            if output.status == Some(0) {
+                let first_line = String::from_utf8_lossy(&output.stdout)
+                    .lines()
+                    .next()
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
+                if !first_line.is_empty() {
+                    return first_line;
+                }
             }
         }
     }
