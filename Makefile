@@ -1,4 +1,4 @@
-.PHONY: build test lint format format-check check ci wasm wasm-debug clean
+.PHONY: build test lint format format-check version-check check ci wasm wasm-debug clean
 
 build:
 	cargo build
@@ -14,6 +14,9 @@ format:
 
 format-check:
 	cargo fmt -- --check
+
+version-check:
+	bash scripts/check_version_alignment.sh
 
 check: lint format-check test
 

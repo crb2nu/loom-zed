@@ -63,10 +63,12 @@ You can customize behavior in Zed settings under `context_servers.loom`:
             "tools_poll_interval_secs": 30
           },
           "prompts": {
-            "enabled": true
+            "enabled": true,
+            "recipes_file": null
           },
           "resources": {
-            "enabled": true
+            "enabled": true,
+            "include_diagnostics": false
           }
         }
       }
@@ -127,3 +129,7 @@ chmod +x ~/.local/share/zed/extensions/loom-zed/loom-core/*/loom
 
 Ensure `loom` is on your `$PATH` or the auto-download completed successfully. Check Zed's
 extension host logs (View > Toggle Developer Tools) for error messages.
+
+## Releasing
+
+See `docs/RELEASING.md`.

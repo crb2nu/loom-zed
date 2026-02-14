@@ -3,3 +3,5 @@
 /.loom/
 /debug-proxy.sh
 /extension.wasm
+__pycache__/
+*.pyc

@@ -70,12 +70,16 @@ pub(crate) struct McpWrapperSettings {
 pub(crate) struct McpPromptsSettings {
     /// If true, expose Loom Zed prompt recipes via MCP Prompts.
     pub(crate) enabled: Option<bool>,
+    /// Optional path to a JSON file with additional prompt recipes.
+    pub(crate) recipes_file: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub(crate) struct McpResourcesSettings {
     /// If true, expose Loom Zed resources via MCP Resources.
     pub(crate) enabled: Option<bool>,
+    /// If true, expose a (potentially expensive) diagnostics resource that runs `loom check`.
+    pub(crate) include_diagnostics: Option<bool>,
 }
 
 impl Default for AgentSettings {
@@ -128,11 +132,22 @@ impl McpPromptsSettings {
     pub(crate) fn enabled(&self) -> bool {
         self.enabled.unwrap_or(true)
     }
+
+    pub(crate) fn recipes_file(&self) -> Option<&str> {
+        self.recipes_file
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+    }
 }
 
 impl McpResourcesSettings {
     pub(crate) fn enabled(&self) -> bool {
         self.enabled.unwrap_or(true)
+    }
+
+    pub(crate) fn include_diagnostics(&self) -> bool {
+        self.include_diagnostics.unwrap_or(false)
     }
 }
 
@@ -264,6 +279,11 @@ pub(crate) const SETTINGS_SCHEMA: &str = r#"{
               "type": "boolean",
               "default": true,
               "description": "Expose prompt recipes (onboarding, CI triage, rollout checklists) in the Agent prompt picker."
+            },
+            "recipes_file": {
+              "type": ["string", "null"],
+              "default": null,
+              "description": "Optional path to a JSON file with additional prompt recipes for the MCP wrapper."
             }
           }
         },
@@ -275,6 +295,11 @@ pub(crate) const SETTINGS_SCHEMA: &str = r#"{
               "type": "boolean",
               "default": true,
               "description": "Expose Loom status/servers/tools/settings as MCP resources."
+            },
+            "include_diagnostics": {
+              "type": "boolean",
+              "default": false,
+              "description": "Expose a potentially expensive diagnostics resource that runs `loom check`."
             }
           }
         }
@@ -301,10 +326,12 @@ pub(crate) const DEFAULT_SETTINGS: &str = r#"{
       "tools_poll_interval_secs": 30
     },
     "prompts": {
-      "enabled": true
+      "enabled": true,
+      "recipes_file": null
     },
     "resources": {
-      "enabled": true
+      "enabled": true,
+      "include_diagnostics": false
     }
   }
 }"#;
@@ -376,6 +403,31 @@ mod tests {
         let s = parse_extension_settings(Some(&value));
         assert_eq!(s.agent.agent_id(), "my-agent");
         assert_eq!(s.agent.default_namespace.as_deref(), Some("project/main"));
+    }
+
+    #[test]
+    fn prompts_recipes_file_default_none() {
+        let s = parse_extension_settings(None);
+        assert!(s.mcp.prompts.recipes_file().is_none());
+    }
+
+    #[test]
+    fn resources_include_diagnostics_default_false() {
+        let s = parse_extension_settings(None);
+        assert!(!s.mcp.resources.include_diagnostics());
+    }
+
+    #[test]
+    fn parse_prompts_recipes_file() {
+        let value = zed::serde_json::json!({
+            "mcp": {
+                "prompts": {
+                    "recipes_file": "  /tmp/recipes.json  "
+                }
+            }
+        });
+        let s = parse_extension_settings(Some(&value));
+        assert_eq!(s.mcp.prompts.recipes_file(), Some("/tmp/recipes.json"));
     }
 
     #[test]

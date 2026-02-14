@@ -14,6 +14,8 @@ jobs:
         with:
           components: rustfmt, clippy
           targets: wasm32-wasip2
+      - name: Version sanity
+        run: bash scripts/check_version_alignment.sh
       - name: Format
         run: cargo fmt --check
       - name: Clippy

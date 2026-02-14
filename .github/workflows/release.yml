@@ -1,0 +1,31 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip2
+
+      - name: Version sanity
+        run: bash scripts/check_version_alignment.sh
+
+      - name: Build WASI (wasm32-wasip2)
+        run: cargo build --release --target wasm32-wasip2
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: target/wasm32-wasip2/release/loom_zed.wasm
+

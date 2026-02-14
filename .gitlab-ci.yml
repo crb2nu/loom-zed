@@ -18,6 +18,7 @@ check:
   stage: check
   script:
     - rustc --version
+    - bash scripts/check_version_alignment.sh
     - cargo fmt -- --check
     - cargo clippy -- -D warnings
 

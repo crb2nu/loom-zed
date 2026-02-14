@@ -12,6 +12,7 @@ This is intentionally dependency-free (stdlib only) and should run anywhere Pyth
 from __future__ import annotations
 
 import argparse
+import collections
 import json
 import queue
 import subprocess
@@ -47,7 +48,7 @@ def _hash_tools_list(result: Dict[str, Any]) -> str:
 
 PROMPT_PREFIX = "loom_zed__"
 
-PROMPT_RECIPES = [
+DEFAULT_PROMPT_RECIPES = [
     {
         "name": f"{PROMPT_PREFIX}onboard_repo",
         "description": "Onboard to this repo quickly (structure, workflows, risks).",
@@ -138,9 +139,11 @@ PROMPT_RECIPES = [
     },
 ]
 
+PROMPT_RECIPES = list(DEFAULT_PROMPT_RECIPES)
+
 RESOURCE_PREFIX = "loom-zed://"
 
-RESOURCES = [
+BASE_RESOURCES = [
     {
         "uri": f"{RESOURCE_PREFIX}status",
         "name": "Loom Status",
@@ -164,6 +167,39 @@ RESOURCES = [
         "name": "Loom Zed Settings",
         "description": "Effective wrapper settings (best-effort).",
         "mimeType": "application/json",
+    },
+    {
+        "uri": f"{RESOURCE_PREFIX}profile",
+        "name": "Loom Profile",
+        "description": "Current Loom profile (from `loom profile current`).",
+        "mimeType": "text/plain",
+    },
+    {
+        "uri": f"{RESOURCE_PREFIX}sync-status",
+        "name": "Loom Sync Status",
+        "description": "Sync status (from `loom sync status`).",
+        "mimeType": "text/plain",
+    },
+    {
+        "uri": f"{RESOURCE_PREFIX}wrapper-stderr",
+        "name": "Loom Wrapper Stderr",
+        "description": "Recent stderr from the wrapper and child process (tail buffer).",
+        "mimeType": "text/plain",
+    },
+    {
+        "uri": f"{RESOURCE_PREFIX}about",
+        "name": "About Loom Wrapper",
+        "description": "What this wrapper does and how to configure it.",
+        "mimeType": "text/plain",
+    },
+]
+
+OPTIONAL_RESOURCES = [
+    {
+        "uri": f"{RESOURCE_PREFIX}diagnostics",
+        "name": "Loom Diagnostics",
+        "description": "Diagnostic report (from `loom check`).",
+        "mimeType": "text/plain",
     },
 ]
 
@@ -213,9 +249,57 @@ def _prompt_get(name: str, arguments: Optional[Dict[str, Any]] = None) -> Dict[s
             }
     raise KeyError(name)
 
+def _resources_list(include_diagnostics: bool) -> Dict[str, Any]:
+    resources = list(BASE_RESOURCES)
+    if include_diagnostics:
+        resources.extend(OPTIONAL_RESOURCES)
+    return {"resources": resources}
 
-def _resources_list() -> Dict[str, Any]:
-    return {"resources": RESOURCES}
+
+def _load_prompt_recipes(path: str) -> list[Dict[str, Any]]:
+    """
+    Load additional prompt recipes from a JSON file.
+
+    Expected shape:
+      [
+        {
+          "name": "onboard_repo",   # will be prefixed if missing
+          "description": "...",
+          "arguments": [{"name": "...", "description": "...", "required": false}],
+          "template": "..."
+        }
+      ]
+    """
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    if not isinstance(data, list):
+        raise ValueError("recipes file must be a JSON array")
+
+    out: list[Dict[str, Any]] = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        name = item.get("name")
+        template = item.get("template")
+        description = item.get("description")
+        if not isinstance(name, str) or not name.strip():
+            continue
+        if not isinstance(template, str) or not template.strip():
+            continue
+        if not isinstance(description, str) or not description.strip():
+            description = "Custom prompt recipe"
+        if not name.startswith(PROMPT_PREFIX):
+            name = f"{PROMPT_PREFIX}{name.strip()}"
+        args = item.get("arguments") if isinstance(item.get("arguments"), list) else []
+        out.append(
+            {
+                "name": name,
+                "description": description.strip(),
+                "arguments": args,
+                "template": template,
+            }
+        )
+    return out
 
 
 def _truncate_lines(s: str, max_lines: int = 400) -> str:
@@ -279,16 +363,36 @@ def main() -> int:
         help="Disable Loom Zed prompt recipes.",
     )
     ap.add_argument(
+        "--prompts-recipes-file",
+        default=None,
+        help="Optional path to a JSON file containing additional prompt recipes.",
+    )
+    ap.add_argument(
         "--disable-zed-resources",
         action="store_true",
         default=False,
         help="Disable Loom Zed resources (resources/list + resources/read).",
+    )
+    ap.add_argument(
+        "--resources-include-diagnostics",
+        action="store_true",
+        default=False,
+        help="Expose an additional diagnostics resource (runs `loom check`).",
     )
     ap.add_argument("child_args", nargs=argparse.REMAINDER)
     ns = ap.parse_args()
 
     enable_prompts = not ns.disable_prompt_recipes
     enable_resources = not ns.disable_zed_resources
+    include_diagnostics = bool(ns.resources_include_diagnostics)
+
+    # Load optional additional prompt recipes.
+    if enable_prompts and isinstance(ns.prompts_recipes_file, str) and ns.prompts_recipes_file.strip():
+        try:
+            extra = _load_prompt_recipes(ns.prompts_recipes_file.strip())
+            PROMPT_RECIPES.extend(extra)
+        except Exception as e:
+            _eprint(f"failed to load prompt recipes file {ns.prompts_recipes_file!r}: {e}")
 
     child_cmd = [ns.loom]
     if ns.child_args and ns.child_args[0] == "--":
@@ -309,6 +413,10 @@ def main() -> int:
     last_tools_hash: Optional[str] = None
     last_tools_names: list[str] = []
     poll_inflight = False
+
+    # Tail buffer of child stderr for debuggability (and to avoid deadlocking if stderr is noisy).
+    stderr_lock = threading.Lock()
+    stderr_tail: "collections.deque[str]" = collections.deque(maxlen=200)
 
     outbound_q: "queue.Queue[Dict[str, Any]]" = queue.Queue()
 
@@ -334,15 +442,35 @@ def main() -> int:
                 # We emit `notifications/tools/list_changed`, so declare `tools.listChanged`.
                 # This nudges MCP clients (like Zed) to refresh tools when notified.
                 caps = msg["result"].get("capabilities")
-                if isinstance(caps, dict):
-                    tools_caps = caps.get("tools")
-                    if not isinstance(tools_caps, dict):
-                        tools_caps = {}
-                        caps["tools"] = tools_caps
-                    tools_caps["listChanged"] = True
+                if not isinstance(caps, dict):
+                    caps = {}
+                    msg["result"]["capabilities"] = caps
+
+                tools_caps = caps.get("tools")
+                if not isinstance(tools_caps, dict):
+                    tools_caps = {}
+                    caps["tools"] = tools_caps
+                tools_caps["listChanged"] = True
+
+                # If we're implementing prompts/resources, ensure they're advertised.
+                if enable_prompts:
+                    prompts_caps = caps.get("prompts")
+                    if not isinstance(prompts_caps, dict):
+                        prompts_caps = {}
+                        caps["prompts"] = prompts_caps
+                if enable_resources:
+                    resources_caps = caps.get("resources")
+                    if not isinstance(resources_caps, dict):
+                        resources_caps = {}
+                        caps["resources"] = resources_caps
 
             if msg_id in intercept_prompts_list_ids:
                 intercept_prompts_list_ids.discard(msg_id)
+                if "error" in msg:
+                    msg.pop("error", None)
+                    msg["result"] = _prompt_list()
+                    forward_to_client(msg)
+                    continue
                 # Merge child prompts with our recipes (ours first).
                 result = msg.get("result") if isinstance(msg.get("result"), dict) else {}
                 merged = _prompt_list()
@@ -359,13 +487,13 @@ def main() -> int:
                 intercept_resources_list_ids.discard(msg_id)
                 if "error" in msg:
                     msg.pop("error", None)
-                    msg["result"] = _resources_list()
+                    msg["result"] = _resources_list(include_diagnostics)
                     forward_to_client(msg)
                     continue
 
                 # Merge child resources with ours (ours first).
                 result = msg.get("result") if isinstance(msg.get("result"), dict) else {}
-                merged = _resources_list()
+                merged = _resources_list(include_diagnostics)
                 child_resources = []
                 if isinstance(result, dict):
                     child_resources = result.get("resources") or []
@@ -417,6 +545,17 @@ def main() -> int:
 
             forward_to_client(msg)
 
+    def child_stderr_thread() -> None:
+        assert child.proc.stderr
+        for line in child.proc.stderr:
+            line = line.rstrip("\n")
+            if not line:
+                continue
+            with stderr_lock:
+                stderr_tail.append(line)
+            # Keep stderr visible for operators reading Zed logs.
+            _eprint("loom-child stderr:", line)
+
     def poller_thread() -> None:
         nonlocal poll_inflight
         interval = int(ns.tools_poll_interval_secs or 0)
@@ -436,6 +575,11 @@ def main() -> int:
 
     t_reader = threading.Thread(target=reader_thread, name="loom-child-reader", daemon=True)
     t_reader.start()
+
+    t_stderr = threading.Thread(
+        target=child_stderr_thread, name="loom-child-stderr", daemon=True
+    )
+    t_stderr.start()
 
     t_poller = threading.Thread(target=poller_thread, name="loom-tools-poller", daemon=True)
     t_poller.start()
@@ -562,12 +706,133 @@ def main() -> int:
                                     },
                                 }
                             )
+                        elif uri == f"{RESOURCE_PREFIX}profile":
+                            text = _truncate_lines(
+                                _run_loom(ns, ["profile", "current"], timeout_secs=10)
+                            )
+                            forward_to_client(
+                                {
+                                    "jsonrpc": "2.0",
+                                    "id": rid,
+                                    "result": {
+                                        "contents": [
+                                            {
+                                                "uri": uri,
+                                                "mimeType": "text/plain",
+                                                "text": text,
+                                            }
+                                        ]
+                                    },
+                                }
+                            )
+                        elif uri == f"{RESOURCE_PREFIX}sync-status":
+                            text = _truncate_lines(
+                                _run_loom(ns, ["sync", "status"], timeout_secs=20)
+                            )
+                            forward_to_client(
+                                {
+                                    "jsonrpc": "2.0",
+                                    "id": rid,
+                                    "result": {
+                                        "contents": [
+                                            {
+                                                "uri": uri,
+                                                "mimeType": "text/plain",
+                                                "text": text,
+                                            }
+                                        ]
+                                    },
+                                }
+                            )
+                        elif uri == f"{RESOURCE_PREFIX}diagnostics":
+                            if not include_diagnostics:
+                                forward_to_client(
+                                    {
+                                        "jsonrpc": "2.0",
+                                        "id": rid,
+                                        "error": {
+                                            "code": -32602,
+                                            "message": "diagnostics resource disabled (set mcp.resources.include_diagnostics)",
+                                        },
+                                    }
+                                )
+                            else:
+                                text = _truncate_lines(_run_loom(ns, ["check"], timeout_secs=60))
+                                forward_to_client(
+                                    {
+                                        "jsonrpc": "2.0",
+                                        "id": rid,
+                                        "result": {
+                                            "contents": [
+                                                {
+                                                    "uri": uri,
+                                                    "mimeType": "text/plain",
+                                                    "text": text,
+                                                }
+                                            ]
+                                        },
+                                    }
+                                )
+                        elif uri == f"{RESOURCE_PREFIX}wrapper-stderr":
+                            with stderr_lock:
+                                lines = list(stderr_tail)
+                            if not lines:
+                                text = "No wrapper/child stderr captured yet."
+                            else:
+                                text = "\n".join(lines)
+                            forward_to_client(
+                                {
+                                    "jsonrpc": "2.0",
+                                    "id": rid,
+                                    "result": {
+                                        "contents": [
+                                            {
+                                                "uri": uri,
+                                                "mimeType": "text/plain",
+                                                "text": _truncate_lines(text, max_lines=400),
+                                            }
+                                        ]
+                                    },
+                                }
+                            )
+                        elif uri == f"{RESOURCE_PREFIX}about":
+                            text = (
+                                "Loom MCP Wrapper (Zed)\n\n"
+                                "This process wraps `loom proxy` over stdio and adds:\n"
+                                "- Prompt recipes (MCP Prompts)\n"
+                                "- Tool hot reload notifications (tools/list_changed)\n"
+                                "- Zed-friendly resources for 'Add Context'\n\n"
+                                "Wrapper options:\n"
+                                f"- prompts enabled: {bool(enable_prompts)}\n"
+                                f"- resources enabled: {bool(enable_resources)}\n"
+                                f"- diagnostics resource enabled: {bool(include_diagnostics)}\n"
+                            )
+                            forward_to_client(
+                                {
+                                    "jsonrpc": "2.0",
+                                    "id": rid,
+                                    "result": {
+                                        "contents": [
+                                            {
+                                                "uri": uri,
+                                                "mimeType": "text/plain",
+                                                "text": text,
+                                            }
+                                        ]
+                                    },
+                                }
+                            )
                         elif uri == f"{RESOURCE_PREFIX}settings":
                             payload = {
                                 "wrapper": {
+                                    "loom": ns.loom,
+                                    "child_cmd": child_cmd,
                                     "tools_poll_interval_secs": int(ns.tools_poll_interval_secs),
                                     "prompts_enabled": bool(enable_prompts),
                                     "resources_enabled": bool(enable_resources),
+                                    "include_diagnostics": bool(include_diagnostics),
+                                    "prompts_recipes_file": ns.prompts_recipes_file,
+                                    "stderr_tail_lines": int(len(stderr_tail)),
                                 }
                             }
                             forward_to_client(

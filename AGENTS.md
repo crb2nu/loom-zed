@@ -124,8 +124,8 @@ Configured in Zed settings under `context_servers.loom`:
             "python": null,
             "tools_poll_interval_secs": 30
           },
-          "prompts": { "enabled": true },
-          "resources": { "enabled": true }
+          "prompts": { "enabled": true, "recipes_file": null },
+          "resources": { "enabled": true, "include_diagnostics": false }
         }
       }
     }
@@ -143,6 +143,13 @@ Configured in Zed settings under `context_servers.loom`:
 | `settings.download.repo` | `crb2nu/loom-core` | GitHub repo for releases |
 | `settings.download.tag` | `null` (latest) | Pin to specific release tag |
 | `settings.download.asset` | `null` (auto) | Override exact asset name |
+| `settings.mcp.wrapper.enabled` | `true` | Run the MCP wrapper (python) to add prompts/resources + tool hot reload |
+| `settings.mcp.wrapper.python` | `null` | Optional explicit python executable (e.g. `/usr/bin/python3`) |
+| `settings.mcp.wrapper.tools_poll_interval_secs` | `30` | Poll `tools/list` and emit `tools/list_changed` if it changes |
+| `settings.mcp.prompts.enabled` | `true` | Expose prompt recipes via MCP Prompts |
+| `settings.mcp.prompts.recipes_file` | `null` | Load additional prompt recipes from a JSON file |
+| `settings.mcp.resources.enabled` | `true` | Expose Loom/Zed resources for “Add Context” |
+| `settings.mcp.resources.include_diagnostics` | `false` | Expose a diagnostics resource that runs `loom check` |
 
 ## Key Commands
 
