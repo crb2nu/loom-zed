@@ -1,4 +1,4 @@
-.PHONY: build test lint format format-check check ci clean
+.PHONY: build test lint format format-check check ci wasm wasm-debug clean
 
 build:
 	cargo build
@@ -18,6 +18,14 @@ format-check:
 check: lint format-check test
 
 ci: check
+
+wasm:
+	cargo build --release --target wasm32-wasip2
+	cp target/wasm32-wasip2/release/loom_zed.wasm extension.wasm
+
+wasm-debug:
+	cargo build --target wasm32-wasip2
+	cp target/wasm32-wasip2/debug/loom_zed.wasm extension.wasm
 
 clean:
 	cargo clean
