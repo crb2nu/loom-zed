@@ -1,2 +1,5 @@
 /target
-
+/.config/
+/.loom/
+/debug-proxy.sh
+/extension.wasm

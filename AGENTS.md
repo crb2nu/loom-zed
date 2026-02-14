@@ -12,12 +12,15 @@ Zed extension that integrates Loom (loom-core) with the Zed editor. Provides:
 - Auto-download of loom-core binaries from GitHub releases
 - Platform-aware asset selection (macOS/Linux/Windows, arm64/amd64)
 
-## Current Version: 0.1.0
+## Current Version: 0.6.0
 
-Key features in v0.1.0:
+Key features in v0.6.0:
 - **Context server**: Runs `loom proxy` as a Zed MCP context server
 - **Auto-download**: Fetches loom-core from GitHub releases into extension working directory
-- **Slash commands**: Diagnostic and operational commands via Zed's slash command UI
+- **Slash commands**: 20+ operational commands (`/loom-check`, `/loom-status`, `/loom-sync`, `/loom-restart`, `/loom-tools`, `/loom-servers`, `/loom-help`, etc.)
+- **Prompt recipes**: Curated MCP prompts in Zed's Agent prompt picker (via wrapper)
+- **Tool hot reload**: Emits `tools/list_changed` when Loom's tool set changes (via wrapper)
+- **Resources**: Exposes Loom/Zed integration resources for "Add Context" (MCP Resources)
 - **Platform-aware**: Selects correct binary for OS/architecture with fallback heuristics
 - **Configurable**: Override repo, tag, asset, or provide an explicit binary path
 
@@ -67,17 +70,22 @@ See also:
 ### Current Source Structure
 ```
 src/
-└── lib.rs          # All logic: extension struct, download, settings, commands, env utils
+├── lib.rs          # Zed extension entrypoint + context server wiring
+├── commands.rs     # process exec helpers + output truncation
+├── completions.rs  # slash command completion logic
+├── dispatch.rs     # slash command dispatch + CLI integration
+├── download.rs     # ensure_loom_install + GitHub release asset selection
+├── env.rs          # PATH/env composition helpers
+├── format.rs       # human-friendly / markdown formatting
+├── help.rs         # `/loom-help` output
+├── log.rs          # lightweight logging helpers
+└── settings.rs     # extension settings schema + parsing + defaults
 ```
 
-### Module Structure (planned)
+### Wrapper Script
 ```
-src/
-├── lib.rs          # LoomExtension struct, trait impls, register_extension! (~100 lines)
-├── download.rs     # ensure_loom_install, select_release_asset, find_file_named, infer_downloaded_file_type
-├── settings.rs     # LoomExtensionSettings, LoomDownloadSettings, parse_extension_settings
-├── commands.rs     # slash command dispatch, run_command_capture, truncate_output, join_args
-└── env.rs          # env_map_to_vec, shell_env_to_vec, with_path_prefix, upsert_env, current_path_sep, install_key
+scripts/
+└── loom_mcp_wrapper.py  # prompt recipes + tools/list hot reload on top of `loom proxy`
 ```
 
 ### Key Types
@@ -88,7 +96,7 @@ src/
 
 ### Build Targets
 - **Native** (`cargo build`): Used for tests
-- **WASI** (`cargo build --target wasm32-wasi`): Required for Zed runtime
+- **WASI** (`cargo build --target wasm32-wasip2`): Required for Zed runtime
 
 ## Configuration
 
@@ -98,9 +106,11 @@ Configured in Zed settings under `context_servers.loom`:
 {
   "context_servers": {
     "loom": {
-      "command": "loom",
-      "args": ["proxy"],
-      "env": { "LOOM_LOG_LEVEL": "info" },
+      "command": {
+        "path": "loom",
+        "arguments": ["proxy"],
+        "env": { "LOOM_LOG_LEVEL": "info" }
+      },
       "settings": {
         "download": {
           "enabled": true,
@@ -160,7 +170,7 @@ make format                        # auto-format
 
 Defined in `extension.toml`:
 - **Context servers**: `loom` (runs `loom proxy`)
-- **Slash commands**: `loom-check`, `loom-status`, `loom-sync`, `loom-restart`
+- **Slash commands**: implemented and declared in `extension.toml` (see the full list there)
 - **Capabilities**: `process:exec`, `download_file`
 - **Zed Extension API**: v0.7.0
 

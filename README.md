@@ -44,9 +44,11 @@ You can customize behavior in Zed settings under `context_servers.loom`:
 {
   "context_servers": {
     "loom": {
-      "command": "loom",
-      "args": ["proxy"],
-      "env": { "LOOM_LOG_LEVEL": "info" },
+      "command": {
+        "path": "loom",
+        "arguments": ["proxy"],
+        "env": { "LOOM_LOG_LEVEL": "info" }
+      },
       "settings": {
         "download": {
           "enabled": true,
